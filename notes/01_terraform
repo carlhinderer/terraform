@@ -1,0 +1,384 @@
+-----------------------------------------------------------------------
+| CHAPTER 1 - TERRAFORM                                               |
+-----------------------------------------------------------------------
+
+- DevOps
+
+    - In the not-so-distant past, developers and operations were completely separate.  The Dev team would
+        build an application and toss it over the wall to operations, who would deploy it.  Much of the
+        work was done manually.
+
+    - With the shift to the cloud, infrastructure is being defined in code.
+
+    - The goal of DevOps is to make software delivery vastly more efficient.  The four core values of 
+        DevOps are CAMS (Culture, Automation, Measurement, Sharing).
+
+
+
+- Infrastructure as Code
+
+    - With IaC, you write and execute code to define, deploy, update, and destroy your infrastructure.
+        
+
+    - There are 5 broad categories of IaC tools:
+
+        1. Ad hoc scripts
+        2. Configuration management tools
+        3. Server templating tools
+        4. Orchestration tools
+        5. Provisioning tools
+
+
+
+- Ad Hoc Scripts
+
+    - With an ad hoc script, you take whatever task you were doing manually, break it down into discrete
+        steps, and use your favorite scripting language (ie Bash, Ruby, Python) to define each of those
+        steps in code.  Then you execute the script on the server.
+
+
+    - For example, here is a bash script to set up a web server:
+
+        # setup-webserver.sh
+        ------------------------
+        sudo apt-get update
+        sudo apt-get install -y php apache2
+        sudo git clone https://github.com/brikis98/php-app.git /var/www/html/app
+        sudo service apache2 start
+
+
+    - The great and terrible thing about ad hoc scripts is that you can write the code however you want.
+        Every problem requires a different script, and everyone has their own coding style.
+
+
+
+- Configuration Management Tools
+
+    - Configuration management tools are designed to install and manage software on existing servers.
+        Chef, Puppet, and Ansible are popular examples.
+
+
+    - Example: 
+
+        # web-server.yml (Ansible role)
+        -----------------------
+        - name: Update the apt-get cache
+          apt:
+            update_cache: yes
+
+        - name: Install PHP
+          apt:
+            name: php
+
+        - name: Install Apache
+          apt:
+            name: apache2
+
+        - name: Copy the code from the repository
+          git: repo=https://github.com/brikis98/php-app.git dest=/var/www/html/app
+
+        - name: Start Apache
+          service: name=apache2 state=started enabled=yes
+
+
+    - Advantages to this approach include conding conventions, idempotence, and ease of managing large
+        numbers of servers.
+
+
+    - For example, to apply the 'webserver.yml' to 5 servers, we first create a file that contains
+        the IP addresses of those servers:
+
+        # hosts
+        -----------------------
+        [webservers]
+        11.11.11.11
+        11.11.11.12
+        11.11.11.13
+        11.11.11.14
+        11.11.11.15
+
+      Then, we create an Ansible playbook:
+
+        # playbook.yml
+        -----------------------
+        - hosts: webservers
+          roles:
+            - webserver
+
+      Then, we execute the playbook:
+
+        $ ansible-playbook playbook.yml
+
+
+
+- Server Templating Tools
+
+    - Server templating tools such as Docker, Packer, and Vagrant have been growing in popularity.
+        Instead of launching a bunch of servers and configuring them by running the same code on each
+        one, server templating tools create an image of a server that contains the OS, software, files,
+        and all other relevant details.  Then some other IaC tools is used to install that image on
+        all of your servers.
+
+
+    - There are 2 broad categories of tools for working with images: VMs and containers.  A VM
+        emulates an entire computer system, and a hypervisor virtualizes the underlying CPU, memory,
+        hard drive, and networking.
+
+
+    - A container emulates the user space of an OS.  You run a container engine to create isolated
+        processes, memory, mount points, and networking.
+
+
+    - On most modern OSs, code runs in either 'kernel space' or 'user space'.  Code running in kernel
+        space has direct, unrestricted access to all of the hardware.  Since there are no security or
+        safety restrictions, kernel space is reserved for the lowest-level, most trusted functions of the
+        OS (typically called the kernel).
+
+      Code running in user space does not have direct access to the hardware and must use APIs exposed
+        by the kernel instead.  Just about all applications run in user space.
+
+
+    - As a general rule, containers provide isolation that is good enough to run your own code, but if
+        you need to run third-party code (ie you're building your own cloud provider) that might be
+        performing malicion actions, you need the increased isolation guarantees of a VM.
+
+
+    - For example, here is a Packer template that creates an Amazon Machine Image (AMI), which is a VM
+        that you can run on AWS:
+
+        web-server.json
+        ------------------------
+        {
+          "builders": [{
+            "ami_name": "packer-example-",
+            "instance_type": "t2.micro",
+            "region": "us-east-2",
+            "type": "amazon-ebs",
+            "source_ami": "ami-0fb653ca2d3203ac1",
+            "ssh_username": "ubuntu"
+          }],
+          "provisioners": [{
+            "type": "shell",
+            "inline": [
+              "sudo apt-get update",
+              "sudo apt-get install -y php apache2",
+              "sudo git clone https://github.com/brikis98/php-app.git /var/www/html/app"
+            ],
+          "environment_vars": [
+            "DEBIAN_FRONTEND=noninteractive"
+          ],
+          "pause_before": "60s"
+         }]
+       }
+
+      To build an AMI from this template:
+
+        $ packer build webserver.json
+
+      After the build completes, you can install that AMI on all of your AWS servers and configure each
+        server to run Apache when the server is booting.
+
+
+    - Note that the different server templating tools have slightly different purposes.
+
+        - Packer is typically used to create images you run directly on top of production servers, such
+            as an AMI that you run in your production AWS account.
+
+        - Vagrant is typically used to create images that you run on your development computers, such as
+            a VirtualBox image that you run on your laptop.
+
+        - Docker is typically used to create images of individual applications.  Docker images can be run
+            on production or development computers, as long as the computer has the Docker Engine
+            configured.
+
+        - For example, a common pattern is to use Packer to create an AMI that has the Docker Engine
+            installed, deploy that AMI on a cluster of servers in your AWS account, and then deploy
+            individual Docker containers across that cluster to run your applications.
+
+
+    - Server templating is a key component of the shift to 'immutable infrastructure'.  This idea is 
+        inspired by functional programming, where variables are immutable, so it is much easier to
+        reason about your code.  With immutable infrastructure, once you've deployed a server, you 
+        never make changes to it again.  If you need to update something, you create a new image from
+        your server template and deploy it to a new server.
+
+
+
+- Orchestration Tools
+
+    - Server templating tools are great for creating VMs and containers, but don't help you manage them.
+        For instance, you'll need a way to:
+
+        - Deploy VMs and containers
+        - Roll out updates using strategies like rolling, blue-green, or canary deployment
+        - Auto healing that monitors your VMs/containers and automatically replaces unhealthy ones
+        - Auto scaling that scales the number of VMs/containers up and down in response to load
+        - Load balancing that distributes traffic across your VMs/containers
+        - Service discovery that allows your VMs/containers to find and talk to each other over a network
+
+
+    - These tasks are performed by orchestration tools such as K8s, Mesos, AWS ECS, Docker Swarm, and
+        Nomad.
+
+
+    - For example, with K8s you first deploy a 'K8s cluster', which is a group of servers that K8s will
+        manage and use to run your Docker containers.  Most major cloud providers have native support
+        for deploying managed K8s clusters (ie Amazon EKS, Google GKE, and Azure AKS).
+
+
+
+- Provisioning Tools
+
+    - Configuration management, server templating, and orchestration tools define the code that runs on
+        each server.  Provisioning tools, such as Terraform, CloudFormation, OpenStack Heat, and Pulumi
+        are responsible for creating the servers themselves.  
+
+      They can also be used to create databases, caches, load balancers, queues, monitoring, subnet configs,
+        firewall settings, routing rules, SSL certificates, and almost any other aspect of your
+        infrastructure.
+
+
+    - For example, this code deploys a web server using Terraform:
+
+        resource "aws_instance" "app" {
+          instance_type     = "t2.micro"
+          availability_zone = "us-east-2a"
+          ami               = "ami-0fb653ca2d3203ac1"
+
+          user_data = <<-EOF
+            #!/bin/bash
+            sudo service apache2 start
+            EOF
+        }
+
+      The 'ami' specifies the id of an AMI to deploy on the server.  This could be the ID of an AMI built
+        from the Packer template.  The 'user_data' is a bash script that executes when the server is
+        booting.
+
+
+
+- Benefits of IaC
+
+    - Deployment of code is self-service.  Many fewer sysadmins are required.  The entire deployment
+        process can be automated, and developers can kick off their own deployments.
+
+    - The deployment process is both faster (because humans aren't involved) and safer (since the
+        process is consistent and repeatable).
+
+    - IaC acts as it's own documentation, which allows everyone in the organization to understand how it
+        works.
+
+    - Storing IaC in version control means that the entire history of infrastructure is stored in a commit
+        log.  Debugging is much easier and you can easily revert back to a previous version.
+
+    - Every change can be subject to a code review, a suite of automated tests, and static analysis tools.
+
+    - Infrastructure can be packaged into reusable modules so that you can build on top of known,
+        documented, battle-tested pieces.
+
+
+
+- How Terraform Works
+
+    - Terraform is an open source tool created by HashiCorp and written in Go.  The Go complies down to
+        a single binary called 'tarraform'.  This binary can be used to deploy infrastructure to just
+        about any computer.
+
+
+    - Under the hood, the terraform binary makes API calls to one or more providers (ie AWS, GCP, Azure,
+        OpenStack, DigitalOcean).  This means that terraform gets to leverage authentication mechanisms
+        you already use for the providers (ie the API keys you have for AWS).
+
+
+    - You create Terraform configurations that specify what infrastructure you want to create.  For
+        example, this snippet instructs Terraform to deploy a server on AWS and then create a DNS entry
+        in GCP pointing to the AWS server's IP address.
+
+
+    - Once you have defined your entire infrastructure, you can run commands such as 'terraform apply'
+        to deploy that infrastructure.  When you want to make a change, you update the configuration
+        files and run 'terraform apply' again.
+
+      The terraform binary parses your code, translates it into a series of API calls to the cloud
+        providers specified in the code, and makes those API calls as efficiently as possible on your
+        behalf.
+
+
+    - Because different cloud providers offer different infrastructure, Terraform code is specific to
+        each provider.  Since there is no easy way to transparently paper over the difference between
+        providers, Terraform doesn't try to.
+
+
+
+- Comparing Terraform to Other IaC Tools
+
+    - Chef, Puppet, and Ansible are all configuration management tools.  If you use server templating tools, 
+        the vast majority of your configuration management needs are already taken care of.  Once you have
+        a Dockerfile or a Packer template, all you need to do is deploy the image.  When it comes to
+        provisioning, a provisioning tool is your best choice.
+
+
+    - Configuration management tools typically use a mutable infrastructure paradigm.  For instance, if you
+        instruct Chef to install a new version of OpenSSL, it will run the update on all of your existing
+        servers.
+
+      Provisioning tools such as Terraform use an immutable paradigm.  If you want a new version of SSL,
+        you use Packer to create a new image with the new version, deploy that image across a set of new
+        servers, then terminate the old servers.  This reduces the likelihood of configuration drift.
+
+
+    - Chef and Ansible encourage a procedural style, whereas other tools like Terraform encourage a more
+        declarative style.  For instance, if you run an Ansible playbook to create 5 servers, then run it
+        again, you'll have 10 servers.
+
+      Terraform is aware of any state it created in the past, so you to change the number of servers you
+        want, you just need to update the config file.  To preview the changes that will be made, the
+        'terraform apply' command can be used.
+
+
+    - Whereas many tools allow you to use a general-purpose language (ie Ruby, Python, JavaScript) to
+        manage infrastructure, Terraform uses a DSL called HCL.
+
+
+    - Chef and Puppet require that you run a master server for storing the state of your infrastructure
+        and distributing updates.  When you want to make changes, you use a client to issue commands to
+        the master server.  This provides a central place for managing status and changes, and the master
+        server can enforce your configuration.
+
+      Ansible, CloudFormation, and Terraform are masterless.  Terraform communicates with cloud providers
+        using their APIs, so in some sense, the API servers are master servers.
+
+
+    - Chef and Puppet require you to install an agent on each server that you want to configure.  The
+        drawbacks of this are the need to bootstrap, maintain, and secure the agents.
+
+      Ansible, CloudFormation, and Terraform do not require you to install extra agents.  Terraform uses
+        the agent software installed on each server by the cloud providers automatically.
+
+
+
+- Using Multiple Tools Together
+
+    - Example: Provisioning and Configuration Management (Terraform and Ansible)
+
+        - Use Terraform to deploy underlying infrastructure, including network topology (ie VPCs), data
+            stores, load balancers, and servers.
+
+        - You then use Ansible to deploy your apps on top of those servers.
+
+        - The downside is that you have to manage mutable infrastructure procedurally with Ansible.
+
+
+    - Example: Provisioning and Server Templating (Terraform and Packer)
+
+        - Use Packer to package your apps as VM images.
+
+        - Then use Terraform to deploy servers with the VM images and the rest of your infrastructure.
+
+        - The downsides are that VMs are heavy and the deployment strategies you can implement with
+            Terraform are limited.
+
+
+    - Example: Provisioning and Server Templating Plus Orchestration (Terraform, Packer, Docker, K8s)
+
+        - 
