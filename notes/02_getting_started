@@ -82,3 +82,94 @@
       Alternatively, Terraform supports the same authentication mechanisms as all AWS CLI and SDK tools.
         It can use credentials in $HOME/.aws/credentials, which are automatically generated if you run
         'aws configure', or IAM roles, which you can add to almost any resource in AWS.
+
+
+
+- Deploying a Single Server
+
+    - Terraform code is written in HCL, in files with the extension '.tf'.  Terraform can create 
+        infrastructure across a variety of platforms (which is calls 'providers').
+
+
+    - The first step is typically to configure the provider you want to use.  Create an empty folder and
+        put a file called 'main.tf' into it:
+
+        # main.tf
+        ---------------------
+        provider "aws" {
+          region = "us-east-2"
+        }
+
+
+    - AWS has datacenters all over the world, grouped into regions (ie us-east-2 or eu-west-1).  Within each 
+        region, there are multiple isolated datacenters known as Availability Zones or AZ's (ie us-east-2a
+        or us-east-2b).
+
+
+    - For each type of provider, there are many different types of 'resources' you can create, such as
+        servers, databases, and load balancers.  The general syntax for creating a resource is:
+
+        resource "<PROVIDER>_<TYPE>" "<NAME>" {
+          [CONFIG ...]
+        }
+
+        PROVIDER      # Name of provider
+        TYPE          # Resource to create in the provider
+        NAME          # Identifier that can be used throughout Terraform code
+        CONFIG        # Arguments specific to the resource
+
+
+    - Here is an example of deploying a single EC2 instance, which we'll add to 'main.tf'.
+
+        # main.tf
+        ---------------------
+        resource "aws_instance" "example" {
+          ami           = "ami-0fb653ca2d3203ac1"
+          instance_type = "t2.micro"
+        }
+
+
+    - An AMI (Amazon Machine Instance) is the server template used to run an EC2 instance.  There are free
+        and paid AMIs in the AWS Marketplace.  You can also create your own AMIs using tools like Packer.
+        Note that the AMI IDs are different in every AWS region, so you need to look up the corresponding
+        IDs if you use a different region.
+
+
+    - Next, we'll run the 'terraform init' command, which scans your code, figures out which providers
+        you are using, and downloads the code for them into a '.terraform' folder.  Terraform will also
+        record which versions of the provider code it downloaded into a '.terraform.lock.hcl' file.  The
+        'init' command is idempotent, so it can be run multiple times.
+
+        $ cd code
+        $ terraform init
+
+
+    - Now, we can run the 'plan' command to see what will be done before making any actual changes.
+
+        $ terraform plan
+
+        # Plan lines
+        +     Will be created
+        -     Will be deleted
+        ~     Will be modified in place
+
+
+    - To actually create the instance, run the 'apply' command.
+
+        $ terraform apply
+
+
+    - We now have our EC2 instance running, but it doesn't have a name.  To add one, we'll add a tag to
+        the resource, then run 'apply' to add the name.
+
+        # main.tf
+        --------------
+        resource "aws_instance" "example" {
+          ami = "ami-0fb653ca2d3203ac1"
+          instance_type = "t2.micro"
+
+          tags = {
+            Name = "terraform-example"
+          }
+        }
+
