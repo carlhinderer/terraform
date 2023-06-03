@@ -300,3 +300,179 @@
 
     - The only servers you should run in public subnets are a small number of reverse proxies and load
         balancers that you lock down as much as possible.
+
+
+
+- Deploying a Configurable Web Server
+
+    - Right now, we have the port 8080 duplicated in both the security group and User Data configuration.
+        To DRY this out, we can define an 'input variable'.
+
+        variable "NAME" {
+          [CONFIG ...]
+        }
+
+
+    - The body of the variable can have the following optional parameters:
+
+        description        # Documentation for how the variable is used
+        default            # Default value if not passed in via command line or environment variable
+        type               # Type constraint on the variable a user passes in
+        validation         # Custom validation rules on value passed in
+        sensitive          # Won't be logged with 'plan' or 'apply' commands
+
+
+    - Example: Checks whether value is a number
+
+        variable "number_example" {
+          description = "An example of a number variable in Terraform"
+          type = number
+          default = 42
+        }
+
+
+    - Example: Checks whether value is a list
+
+        variable "list_example" {
+          description = "An example of a list in Terraform"
+          type = list
+          default = ["a", "b", "c"]
+        }
+
+
+    - Example: Checks whether value is a list of numbers
+
+        variable "list_numeric_example" {
+          description = "An example of a numeric list in Terraform"
+          type = list(number)
+          default = [1, 2, 3]
+        }
+
+
+    - Example: Checks whether value is a map of strings:
+
+        variable "map_example" {
+          description = "An example of a map in Terraform"
+          type = map(string)
+
+          default = {
+            key1 = "value1"
+            key2 = "value2"
+            key3 = "value3"
+          }
+        }
+
+
+    - Example: Create more complex structural type:
+
+        variable "object_example" {
+          description = "An example of a structural type in Terraform"
+
+          type = object({
+            name = string
+            age = number
+            tags = list(string)
+            enabled = bool
+          })
+
+          default = {
+            name = "value1"
+            age = 42
+            tags = ["a", "b", "c"]
+            enabled = true
+          }
+        }
+
+
+    - We'll create a variable that stores the web server port number:
+
+        variable "server_port" {
+          description = "The port number the server will use for HTTP requests"
+          type        = number
+        }
+
+
+    - Now, when run 'apply', since our variable has no default, we will be prompted for a value
+        interactively.
+
+        $ terraform apply
+
+
+    - Alternatively, we can provide a command-line value when we run the command:
+
+        $ terraform plan -var "server_port=8080"
+
+
+    - Or we can set the variable via an environment variable named TF_VAR_<name>.
+
+        $ export TF_VAR_server_port=8080
+        $ terraform plan
+
+
+    - In our case, we'll provide a default value so that we don't have to pass it in every time:
+
+        variable "server_port" {
+          description = "The port number the server will use for HTTP requests"
+          type        = number
+          default     = 8080
+        }
+
+
+    - We can refer to the new variable in our security group resource using the var.<VARIABLE_NAME> variable
+        reference syntax:
+
+        ingress {
+          from_port = var.server_port
+          to_port = var.server_port
+          protocol = "tcp"
+          cidr_blocks = ["0.0.0.0/0"]
+        }
+
+
+    - We can also refer to the new variable in our User Data using the ${...} interpolation expression
+        syntax:
+
+        user_data = <<-EOF
+                    #!/bin/bash
+                    echo "Hello, World" > index.html
+                    nohup busybox httpd -f -p ${var.server_port} &
+                    EOF
+
+
+
+- Output Variables
+
+    - In addition to input variables, we can also define output variables:
+
+        output "<NAME>" {
+          value = <VALUE>
+          [CONFIG ...]
+        }
+
+      The CONFIG can have these optional parameters:
+
+        description        # Documentation
+        sensitive          # Will not be logged with plan or apply
+        depends_on         # Extra hint for dependency graph if needed
+
+
+    - For instance, instead of having to manually look for the IP address of our EC2 instance, we can
+        provide it with an output variable:
+
+        output "public_ip" {
+          value       = aws_instance.example.public_ip
+          description = "The public IP address of the web server"
+        }
+
+
+    - If we now run 'apply', there won't be any changes, but the IP address will be output.
+
+        $ terraform apply
+
+
+    - We can also use the 'output' command to see the value of a specific output.  This is handy for
+        scripting.  For instance, you could run 'terraform apply' in a script, use the 'output' command
+        to grab the public IP, then run curl on the IP as a quick smoke test to validate that the deployment
+        worked.
+
+        $ terraform output public_ip
