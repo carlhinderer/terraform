@@ -173,3 +173,130 @@
           }
         }
 
+
+    - Terraform keeps track of all the resources it already created for this set of config files, so it
+        knows your EC2 instance already exists and modifies it in place.
+
+
+
+- Deploying a Single Web Server
+
+    - For the simplest possible web server, we'll use a tool called 'busybox' that is installed by default
+        on Ubuntu.  We'll wrap the busybox command with a 'nohup' and '&' so that the web server runs
+        permanently in the background whereas the bash script itself can exit.
+
+        #!/bin/bash
+        echo "Hello, World" > index.html
+        nohup busybox httpd -f -p 8080 &
+
+
+    - Note that we use port 8080 instead of 80, because listening on any port less than 1024 requires
+        root user privileges.  This is a security risk, since any attacker who manages to compromise your
+        server would get root privileges, too.  Therefore, it is a best practice to listen on 
+        higher-numbered ports.
+
+
+    - Normally, a tool like Packer would be used to create a custom AMI that has a web server installed on
+        it.  For this simple web server, we'll just add our shell script to our EC2 intance's User Data,
+        which will be executed by the EC2 instance during it's first boot.
+
+      We'll use the Terraform 'user_data_replace_on_true' setting so that when the 'user_data' paremter is
+        changed, the original instance will be terminated and a new one will be created.
+
+        resource "aws_instance" "example" {
+          ami           = "ami-0fb653ca2d3203ac1"
+          instance_type = "t2.micro"
+
+          user_data = <<-EOF
+                      #!/bin/bash
+                      echo "Hello, World" > index.html
+                      nohup busybox httpd -f -p 8080 &
+                      EOF
+
+          user_data_replace_on_change = true
+
+          tags = {
+            Name = "terraform-example"
+          }
+        }
+
+
+    - By default, AWS does not allow any incoming or outgoing traffic from an EC2 instance.  To allow the
+        EC2 instance to receive traffic on port 8080, we need to create a security group:
+
+        resource "aws_security_group" "instance" {
+          name = "terraform-example-instance"
+
+          ingress {
+            from_port = 8080
+            to_port = 8080
+            protocol = "tcp"
+            cidr_blocks = ["0.0.0.0/0"]
+          }
+        }
+
+
+    - This security group allows incoming TCP requests on port 8080 from the CIDR block 0.0.0.0/0.  CIDR
+        blocks are a concise way to specify IP address ranges.  For example, a CIDR block of 10.0.0.0/24
+        represents all IP addresses between 10.0.0.0 and 10.0.0.255.  The CIDR block 0.0.0.0/0 is an IP
+        address range that includes all possible IP addresses.
+
+
+    - Now, we also need to tell our EC2 instance to use the new security group by passing the ID of the
+        security group.  To do that, we'll need to use a Terraform expression.
+
+        - An 'expression' in Terraform is anything that returns a value.  So far, we have used only 
+            literals.
+
+        - One particularly useful type of expression is a reference, which takes the form:
+            <PROVIDER>_<TYPE>.<NAME>.<ATTRIBUTE> (ie aws_security_group.instance.id)
+
+
+    - We'll add this attribute to our EC2 instance resource:
+
+        vpc_security_group_ids = [aws_security_group.instance.id]
+
+
+    - When you add a reference from one resource to another, you create an 'implicit dependency'.
+        Terraform parses these dependencies, builds a dependency graph from them, and uses it to 
+        determine which order to create resources in.  To see the dependency graph:
+
+        $ terraform graph
+
+      The output is in a graph description language called DOT, so you can use it to create an image of
+        the graph using a tool like Graphviz.
+
+
+    - Now, we can run 'apply' to create the new security group and re-create the EC2 instance.  Note that
+        while the web server is being replaced, users will experience downtime.  We'll learn how to do a
+        zero-downtime deployment later.
+
+
+    - If we click our new instance in the console, we can get it's public IP address from the description
+        panel.  We can use a web browser or a tool like curl to make a request to this IP address.
+
+        $ curl http://<EC2_INSTANCE_PUBLIC_IP>:8080
+
+
+
+- Network Security
+
+    - To keep the examples in this book simple, all deploy into the Default VPC into the default
+        subnets of that VPC.
+
+    - A VPC is partitioned into one or more subnets, each of which has it's own IP addresses.
+
+    - The subnets in the Default VPC are all public subnets, which means they get IP addresses that
+        are accessible from the public internet.  This is why we can test our EC2 instances from our home 
+        computer.
+
+    - Running a server in a public subnet like this is a security risk in the real world.  Hackers are
+        constantly scanning IP addresses at random for any weakness.  If your servers are exposed publicly,
+        leaving a single port unprotected or running out-of-date code can allow someone to break in.
+
+    - Therefore, for all production servers, you should deploy all of your servers and data stores in
+        private subnets, which have IP addresses that can be accessed only from within the VPC and not
+        from the public internet.
+
+    - The only servers you should run in public subnets are a small number of reverse proxies and load
+        balancers that you lock down as much as possible.
