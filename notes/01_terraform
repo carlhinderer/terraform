@@ -81,7 +81,7 @@
           service: name=apache2 state=started enabled=yes
 
 
-    - Advantages to this approach include conding conventions, idempotence, and ease of managing large
+    - Advantages to this approach include coding conventions, idempotence, and ease of managing large
         numbers of servers.
 
 
@@ -140,7 +140,7 @@
 
     - As a general rule, containers provide isolation that is good enough to run your own code, but if
         you need to run third-party code (ie you're building your own cloud provider) that might be
-        performing malicion actions, you need the increased isolation guarantees of a VM.
+        performing malicious actions, you need the increased isolation guarantees of a VM.
 
 
     - For example, here is a Packer template that creates an Amazon Machine Image (AMI), which is a VM
@@ -381,4 +381,13 @@
 
     - Example: Provisioning and Server Templating Plus Orchestration (Terraform, Packer, Docker, K8s)
 
-        - 
+        - Use Packer to create a VM image that has Docker and K8s agents installed.
+
+        - Use Terraform to deploy a cluster of servers, each of which runs this VM image, along with the
+            rest of your infrastructure.
+
+        - When the cluster of servers boots up, it forms a K8s cluster that you use to run and manage
+            your Dockerized applications.
+
+        - The benefit of this is that you get all the built-in functionality, but the drawback is added
+            complexity.

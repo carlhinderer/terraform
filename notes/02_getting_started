@@ -1,0 +1,84 @@
+-----------------------------------------------------------------------
+| CHAPTER 2 - GETTING STARTED WITH TERRAFORM                          |
+-----------------------------------------------------------------------
+
+- Setting Up AWS Account
+
+    - We'll log into our root user account.  The only thing we should use the root user account for is 
+        to create other user accounts with more limited permissions, then switch to these user accounts
+        immediately.
+
+
+    - To create a more limited user account:
+
+        - IAM Service
+            > Add User
+                > Name: terraform-user
+                > Access Key - Programmatic Access
+
+
+    - By default, new IAM users have no permissions.  To give the user permissions, you need to assoicate
+        one or more IAM policies with the user's account.  An 'IAM Policy' is a JSON document that defines
+        what the user is or isn't allowed to do.  You can create your own IAM policies or use the predefined
+        policies built into your account ('Managed Policies').
+
+      To run examples in this book, the easiest way is to add the 'AdministratorAccess' Managed Policy to
+        your IAM user.
+
+
+    - Create the user, then copy the 'Access Key Id' and 'Secret Access Key', since they will never be
+        shown again.  Consider saving them in LastPass or some other password manager.
+
+
+    - All of the AWS examples in this book use the 'Default VPC' in your account.  
+
+        - A 'VPC' (Virtual Private Cloud) is an isolated area of your AWS account that has it's own virtual
+            network and IP address space.  
+
+        - Just about every AWS resource deploys into a VPC.  If you don't explicitly specify a VPC, the
+            resource will be deployed into the default VPC.
+
+
+
+- Installing Terraform
+
+    - The easiest way to install Terraform is to use your OS's package manager.
+
+        # Homebrew on MacOS
+        $ brew tap hashicorp/tap
+        $ brew install hashicorp/tap/terraform
+
+
+    - To install on Ubuntu using APT
+
+        # Install required dependencies
+        $ apt-get install wget curl unzip software-properties-common gnupg2 -y
+
+        # Add the Hashicorp repository to apt
+        $ apt-add-repository "deb [arch=$(dpkg --print-architecture)] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+
+        # Update the repository
+        $ apt-get update -y
+
+        # Install Terraform
+        $ apt-get install terraform -y
+
+        # Verify installation
+        $ terraform -v
+
+
+    - To install the auto-complete Terraform extension:
+
+        $ terraform -install-autocomplete
+        $ source ~/.bashrc
+
+
+    - In order for Terraform to make changes to your AWS account, you'll need to set the creds for the IAM
+        account you created earlier:
+
+        $ export AWS_ACCESS_KEY_ID=(your access key id)
+        $ export AWS_SECRET_ACCESS_KEY=(your secret access key)
+
+      Alternatively, Terraform supports the same authentication mechanisms as all AWS CLI and SDK tools.
+        It can use credentials in $HOME/.aws/credentials, which are automatically generated if you run
+        'aws configure', or IAM roles, which you can add to almost any resource in AWS.
