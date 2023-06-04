@@ -476,3 +476,135 @@
         worked.
 
         $ terraform output public_ip
+
+
+
+- Deploying a Cluster of Web Servers
+
+    - In production, we will run multiple servers, scaling the number up and down based on traffic.  AWS
+        can handle this scaling automatically using an ASG (Auto Scaling Group), which will monitor health
+        of your servers, replace failed instances, and adjust the cluster size according to load.
+
+
+    - The first step in creating an ASG is to create a 'launch configuration', which specifies how to
+        configure each EC2 instance in the ASG.  This is similar to our EC2 instance resource, but the 'ami'
+        and 'vpc_security_group_ids' parameters are changed to 'image_id' and 'security_groups'.  Also,
+        the launch configuration doesn't support tags.  We'll replace 'aws_instance' with this launch 
+        configuration:
+
+        resource "aws_launch_configuration" "example" {
+          image_id        = "ami-0fb653ca2d3203ac1"
+          instance_type   = "t2.micro"
+          security_groups = [aws_security_group.instance.id]
+
+          user_data = <<-EOF
+                      #!/bin/bash
+                      echo "Hello, World" > index.html
+                      nohup busybox httpd -f -p ${var.server_port} &
+                      EOF
+        }
+
+
+    - Note that these days, we should actually be using a 'launch template' rather than a launch
+        configuration.  However, we're using launch configurations in this book to keep examples simpler.
+
+
+    - Now that we have the launch configuration, we can create the ASG itself:
+
+        resource "aws_autoscaling_group" "example" {
+          launch_configuration = aws_launch_configuration.example.name
+
+          min_size = 2
+          max_size = 10
+
+          tag {
+            key = "Name"
+            value = "terraform-asg-example"
+            propagate_at_launch = true
+          }
+        }
+
+
+    - Note that the ASG uses a reference to fill in the launch configuration name.  This leads to a problem.
+        Since launch configurations are immutable, if you change any parameter of your launch configuration,
+        Terraform will try to replace it by deleting the old resource and creating it's replacement.
+        However, since our ASG now has a reference to the old resource, Terraform won't be able to delete it.
+
+
+    - To solve this problem, we can use a 'lifecycle' setting.  Every Terraform resource supports several
+        lifecycle settings that specify how the resource is created/updated/deleted.
+
+      One useful lifecycle setting is 'create_before_destroy', which will invert the order in which 
+          resources are replaced.  We'll add this setting to our lanuch configuration:
+
+          resource "aws_launch_configuration" "example" {
+            ...
+
+            # Required when using a launch configuration with an auto scaling group.
+            lifecycle {
+              create_before_destroy = true
+            }
+          }
+
+
+    - There is one other parameter we need to add to our ASG to make it work: 'subnet_ids'.  This specifies
+        the VPC subnet into which EC2 instances should be deployed.
+
+        - Each subnet lives in an isolated AZ (datacenter), so by deploying your instances across multiple
+            subnets, you can ensure your service will keep running even if there is an outage.
+
+        - You could hardcode the list of subnets, but a better option is to use 'data sources' to get the
+            list of subnets in your AWS account.
+
+
+    - A 'data source' is a piece of read-only information that is fetched from a provider every time you
+        run Terraform.  It's a way to query the provider's APIs for data and make it available to your code.
+        The syntax for using a data source is:
+
+        data "<PROVIDER>_<TYPE>" "<NAME>" {
+          [CONFIG ...]
+        }
+
+
+    - Here, we use the 'aws_vpc' data source to look up data for our Default VPC:
+
+        data "aws_vpc" "default" {
+          default = true
+        }
+
+      Note that the arguments we pass in with data sources are typically search filters.
+
+
+    - To get data out of a data source, you use this syntax:
+
+        data.<PROVIDER>_<TYPE>.<NAME>.<ATTRIBUTE>
+        data.aws_vpc.default.id
+
+
+    - We can combine this with another data source, 'aws_subnets', to look up the subnets within that
+        VPC:
+
+        data "aws_subnets" "default" {
+          filter {
+            name = "vpc-id"
+            values = [data.aws_vpc.default.id]
+          }
+        }
+
+
+    - Finally, you can pull the subnet IDs out of the 'aws_subnets' data source and tell your ASG to use
+        those subnets via the 'vpc_zone_identifier' argument:
+
+        resource "aws_autoscaling_group" "example" {
+          launch_configuration = aws_launch_configuration.example.name
+          vpc_zone_identifier = data.aws_subnets.default.ids
+
+          min_size = 2
+          max_size = 10
+
+          tag {
+            key = "Name"
+            value = "terraform-asg-example"
+            propagate_at_launch = true
+          }
+        }
