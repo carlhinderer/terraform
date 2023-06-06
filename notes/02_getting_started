@@ -749,3 +749,54 @@
           target_group_arns = [aws_lb_target_group.asg.arn]
           health_check_type = "ELB"
         }
+
+
+    - Finally, we'll tie all of these pieces together by creating listener rules using the
+        'aws_lb_listener_rule' resource.  We'll add a listener rule that sends requests that match any
+        path to the target group that contains our ASG.
+
+        resource "aws_lb_listener_rule" "asg" {
+          listener_arn = aws_lb_listener.http.arn
+          priority     = 100
+
+          condition {
+            path_pattern {
+              values = ["*"]
+            }
+          }
+
+          action {
+            type = "forward"
+            target_group_arn = aws_lb_target_group.asg.arn
+          }
+        }
+
+
+    - There is one last thing to do.  We need to replace the 'public_ip' that was output before with the
+        DNS name of the ALB.
+
+        output "alb_dns_name" {
+          value = aws_lb.example.dns_name
+          description = "The domain name of the load balancer"
+        }
+
+
+    - After this, we can run 'apply', wait a few minutes, and we'll see all of our infrastructure in the
+        AWS console.  We can test our load balancer and target group:
+
+        $ curl http://<alb_dns_name>
+
+      We can also test the cluster by terminating EC2 instances in the console and watching theym get
+        replaced.
+
+
+
+- Cleanup
+
+    - Because Terraform keeps track of what resources you created, cleanup is simple:
+
+        $ terraform destroy
+
+
+    - We'll keep adding to this code throughout the book, but we can run 'destroy' any time we want to, so
+        that we won't keep getting charged for AWS resources.
