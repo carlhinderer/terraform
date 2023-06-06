@@ -608,3 +608,144 @@
             propagate_at_launch = true
           }
         }
+
+
+
+- Deploying a Load Balancer
+
+    - At this point, we can deploy our ASG, but each server will have it's own IP address.  We can solve
+        this problem by deploying a load balancer.  We'll use AWS's ELB (Elastic Load Balancer) service,
+        which is highly available and scalable.
+
+
+    - AWS offers 3 types of load balancers:
+
+        1. ALB (Application Load Balancer)
+             - Best suited for HTTP and HTTPS traffic
+             - Operates at OSI Layer 7
+
+        2. NLB (Network Load Balancer)
+             - Best suited for TCP, UDP, TLS traffic
+             - Can scale up and down faster that ALB
+             - Operates at OSI Layer 4
+
+        3. CLB (Classic Load Balancer)
+             - Legacy load balancer that predates ALB and NLB
+             - Can handle HTTP, HTTPS, TCP, TLS
+             - Operates at both Layer 7 and Layer 4
+
+
+    - Since we're using web servers, we'll use ALB.  ALB consists of several parts:
+
+        - Listener = Listens on a specific port and protocol
+
+        - Listener rule = Takes requests that come into a listener and sends those that match specific
+                            paths (ie /foo) or hostnames (ie foo.example.com) to specific target groups.
+
+        - Target groups = One or more servers that receive requests from the load balancer.  The target
+                            group also perform health checks and only sends requests to healthy nodes.
+
+
+    - First, we'll create the ALB itself.
+
+        resource "aws_lb" "example" {
+          name = "terraform-asg-example"
+          load_balancer_type = "application"
+          subnets = data.aws_subnets.default.ids
+        }
+
+
+    - Note that the 'subnets' parameter configures the load balancer to use all the subnets in your
+        Default VPC.  AWS load balancers don't consist of a single server, but of multiple servers that
+        can run in separate subnets.  AWS automatically scales the number of load balancer servers up and
+        down based on traffic and handles failover if one of those servers goes down, so you get
+        scalability and high availability out of the box.
+
+
+    - Next, we'll define a listener for this ALB:
+
+        resource "aws_lb_listener" "http" {
+          load_balancer_arn = aws_lb.example.arn
+          port              = 80
+          protocol          = "HTTP"
+
+          # By default, return a simple 404 page
+          default_action {
+            type = "fixed-response"
+
+            fixed_response {
+              content_type = "text/plain"
+              message_body = "404: page not found"
+              status_code = 404
+            }
+          }
+        }
+
+
+    - By default, all AWS resources, including ALBs, don't allow any incoming or outgoing traffic, so you
+        need to create a new security group specifically for the ALB.  This security group should allow
+        incoming requests on port 80 so that you can access the load balancer over HTTP, and outgoing
+        requests on all ports so that the load balancer can perform health checks.
+
+        resource "aws_security_group" "alb" {
+          name = "terraform-example-alb"
+
+          # Allow inbound HTTP requests
+          ingress {
+            from_port = 80
+            to_port = 80
+            protocol = "tcp"
+            cidr_blocks = ["0.0.0.0/0"]
+          }
+
+          # Allow all outbound requests
+          egress {
+            from_port = 0
+            to_port = 0
+            protocol = "-1"
+            cidr_blocks = ["0.0.0.0/0"]
+          }
+        }
+
+
+    - We'll need to tell the 'aws_lb' resource to use this security group:
+
+        resource "aws_lb" "example" {
+          name = "terraform-asg-example"
+          load_balancer_type = "application"
+          subnets = data.aws_subnets.default.ids
+          security_groups = [aws_security_group.alb.id]
+        }
+
+
+    - Next, we'll create a target group for our ASG:
+
+        resource "aws_lb_target_group" "asg" {
+          name = "terraform-asg-example"
+          port = var.server_port
+          protocol = "HTTP"
+          vpc_id = data.aws_vpc.default.id
+
+          health_check {
+            path = "/"
+            protocol = "HTTP"
+            matcher = "200"
+            interval = 15
+            timeout = 3
+            healthy_threshold = 2
+            unhealthy_threshold = 2
+          }
+        }
+
+
+    - How does the target group know which EC2 instances to send requests to?  You could attach a static
+        list of EC2 instances, but with an ASG, instances can launch or terminate at any time, so this 
+        won't work.  Instead, we'll take advantage of the integration between ASG and ALB, and update
+        the 'aws_autoscaling_group resource':
+
+        resource "aws_autoscaling_group" "example" {
+          ...
+
+          target_group_arns = [aws_lb_target_group.asg.arn]
+          health_check_type = "ELB"
+        }
