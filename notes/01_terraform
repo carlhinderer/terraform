@@ -116,7 +116,7 @@
     - Server templating tools such as Docker, Packer, and Vagrant have been growing in popularity.
         Instead of launching a bunch of servers and configuring them by running the same code on each
         one, server templating tools create an image of a server that contains the OS, software, files,
-        and all other relevant details.  Then some other IaC tools is used to install that image on
+        and all other relevant details.  Then some other IaC tool is used to install that image on
         all of your servers.
 
 
