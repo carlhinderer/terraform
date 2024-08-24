@@ -1,0 +1,41 @@
+
+- Overall
+
+    - Need a Docker review
+
+
+
+- Kubernetes Review
+
+    - Getting Started
+
+        - Docker and kubectl are prereqs
+
+        - Contents
+            1   Intro
+            2   Containers
+            3   Clusters
+            4   kubectl
+            5   Pods
+            6   Labels and Annotations
+            7   Service Discovery
+            8   HTTP Load Balancing with Ingress
+            9   ReplicaSets
+            10  Deployments
+            11  DaemonSets
+            12  Jobs
+            13  ConfigMaps and Secrets
+            14  RBAC
+            ------------------
+            15  ServiceMeshes
+            16  Integrating Storage Solutions
+            17  Extending k8s
+            18  Programming Language APIs
+            19  Securing Applications
+            20  Policy and Governance
+            21  Multicluster Application Deployments
+            22  Organizing Applications
+
+
+
+- Helm Review
